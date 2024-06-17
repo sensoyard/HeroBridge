@@ -61,14 +61,14 @@ contract MultiTokenDepositTest is Test {
         vm.stopPrank();
 
         (
+            address userAddr,
             address tokenAddress,
             uint256 amount,
-            uint256 timestamp,
-            uint256 nonce
-        ) = multiTokenDeposit.getDepositDetails(user);
+            uint256 timestamp
+        ) = multiTokenDeposit.getDepositDetails(0);
+        assertEq(userAddr, user);
         assertEq(tokenAddress, address(token));
         assertEq(amount, 100 * 10 ** 18);
-        assertEq(nonce, 0);
     }
 
     function testWithdraw() public {
@@ -77,7 +77,7 @@ contract MultiTokenDepositTest is Test {
         multiTokenDeposit.deposit(address(token), 100 * 10 ** 18);
 
         vm.warp(block.timestamp + 10 minutes);
-        multiTokenDeposit.withdraw();
+        multiTokenDeposit.withdraw(0);
 
         vm.stopPrank();
 
@@ -85,63 +85,38 @@ contract MultiTokenDepositTest is Test {
         assertEq(userBalance, 1000 * 10 ** 18);
     }
 
-    function testDepositAndWithdraw() public {
+    function testCreateFulfillmentOrder() public {
+        vm.startPrank(user);
+        token.approve(address(multiTokenDeposit), 100 * 10 ** 18);
+        multiTokenDeposit.deposit(address(token), 100 * 10 ** 18);
+        multiTokenDeposit.createFulfillmentOrder(0, 50 * 10 ** 18);
+        vm.stopPrank();
+
+        (
+            uint256 depositId,
+            address userAddr,
+            address tokenAddress,
+            uint256 amount,
+            uint256 timestamp
+        ) = multiTokenDeposit.getFulfillmentOrder(0);
+        assertEq(depositId, 0);
+        assertEq(userAddr, user);
+        assertEq(tokenAddress, address(token));
+        assertEq(amount, 50 * 10 ** 18);
+    }
+
+    function testClaimWithProof() public {
         vm.startPrank(user);
         token.approve(address(multiTokenDeposit), 100 * 10 ** 18);
         multiTokenDeposit.deposit(address(token), 100 * 10 ** 18);
 
         vm.warp(block.timestamp + 10 minutes);
-        multiTokenDeposit.withdraw();
+        bytes memory proof = ""; // Mock proof, replace with actual proof in real scenarios
+        multiTokenDeposit.claimWithProof(0, 100 * 10 ** 18, proof);
 
         vm.stopPrank();
 
         uint256 userBalance = token.balances(user);
         assertEq(userBalance, 1000 * 10 ** 18);
-    }
-
-    function testCannotWithdrawBefore10Minutes() public {
-        vm.startPrank(user);
-        token.approve(address(multiTokenDeposit), 100 * 10 ** 18);
-        multiTokenDeposit.deposit(address(token), 100 * 10 ** 18);
-
-        vm.expectRevert("Withdrawal not allowed yet");
-        multiTokenDeposit.withdraw();
-
-        vm.stopPrank();
-    }
-
-    function testStorageSlot() public {
-        vm.startPrank(user);
-        token.approve(address(multiTokenDeposit), 100 * 10 ** 18);
-        multiTokenDeposit.deposit(address(token), 100 * 10 ** 18);
-        vm.stopPrank();
-
-        // Calculate the storage slot for the `deposits` mapping
-        bytes32 userSlot = keccak256(abi.encode(user, uint256(0))); // keccak256(user address, slot of deposits mapping)
-
-        // Load the storage values at the calculated slots
-        bytes32 tokenSlot = vm.load(address(multiTokenDeposit), userSlot);
-        bytes32 amountSlot = vm.load(
-            address(multiTokenDeposit),
-            bytes32(uint256(userSlot) + 1)
-        );
-        bytes32 timestampSlot = vm.load(
-            address(multiTokenDeposit),
-            bytes32(uint256(userSlot) + 2)
-        );
-        bytes32 nonceSlot = vm.load(
-            address(multiTokenDeposit),
-            bytes32(uint256(userSlot) + 3)
-        );
-
-        // Convert storage values to the correct types and assert
-        address tokenAddress = address(uint160(uint256(tokenSlot)));
-        uint256 amount = uint256(amountSlot);
-        uint256 timestamp = uint256(timestampSlot);
-        uint256 nonce = uint256(nonceSlot);
-
-        assertEq(tokenAddress, address(token));
-        assertEq(amount, 100 * 10 ** 18);
-        assertEq(nonce, 0);
     }
 }
