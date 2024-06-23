@@ -21,6 +21,7 @@ contract MultiTokenDeposit {
         uint256 depositId;
         address user;
         address token;
+        address tokenWanted;
         uint256 amount;
         uint256 timestamp;
     }
@@ -34,10 +35,11 @@ contract MultiTokenDeposit {
         uint256 timestamp;
     }
 
-    IFactsRegistry public immutable factsRegistry;
-    address public immutable remoteContract;
     mapping(uint256 => Deposit) public deposits;
     mapping(uint256 => FulfillmentOrder) public fulfillmentOrders;
+
+    IFactsRegistry public immutable factsRegistry;
+    address public immutable remoteContract;
     uint256 public depositNonce;
     uint256 public orderNonce;
 
@@ -45,6 +47,7 @@ contract MultiTokenDeposit {
         address indexed user,
         uint256 depositId,
         address indexed token,
+        address indexed tokenWanted,
         uint256 amount,
         uint256 timestamp
     );
@@ -74,7 +77,11 @@ contract MultiTokenDeposit {
         remoteContract = _remoteContract;
     }
 
-    function deposit(address token, uint256 amount) external {
+    function deposit(
+        address token,
+        address tokenWanted,
+        uint256 amount
+    ) external {
         require(amount > 0, "Amount must be greater than zero");
 
         require(
@@ -87,11 +94,19 @@ contract MultiTokenDeposit {
             depositId: depositId,
             user: msg.sender,
             token: token,
+            tokenWanted: tokenWanted,
             amount: amount,
             timestamp: block.timestamp
         });
 
-        emit DepositMade(msg.sender, depositId, token, amount, block.timestamp);
+        emit DepositMade(
+            msg.sender,
+            depositId,
+            token,
+            tokenWanted,
+            amount,
+            block.timestamp
+        );
     }
 
     function withdraw(uint256 depositId) external {
@@ -123,16 +138,14 @@ contract MultiTokenDeposit {
     function createFulfillmentOrder(
         uint256 depositId,
         uint256 amount,
-        address token
+        address token,
+        address user
     ) external {
-        // Deposit storage deposit = deposits[depositId];
-        // require(deposit.amount >= amount, "Insufficient deposit amount");
-
         uint256 orderId = orderNonce++;
         fulfillmentOrders[orderId] = FulfillmentOrder({
             orderId: orderId,
             depositId: depositId,
-            user: msg.sender,
+            user: user,
             token: token,
             amount: amount,
             timestamp: block.timestamp
@@ -141,11 +154,23 @@ contract MultiTokenDeposit {
         emit FulfillmentOrderCreated(
             orderId,
             depositId,
-            msg.sender,
+            user,
             token,
             amount,
             block.timestamp
         );
+    }
+
+    function claim(uint256 orderId) external {
+        FulfillmentOrder storage order = fulfillmentOrders[orderId];
+        require(order.user == msg.sender, "Not the order owner");
+
+        require(
+            IERC20(order.token).transfer(msg.sender, order.amount),
+            "Transfer failed"
+        );
+
+        delete fulfillmentOrders[orderId];
     }
 
     function claimWithProof(
@@ -230,10 +255,22 @@ contract MultiTokenDeposit {
     )
         external
         view
-        returns (address user, address token, uint256 amount, uint256 timestamp)
+        returns (
+            address user,
+            address token,
+            address tokenWanted,
+            uint256 amount,
+            uint256 timestamp
+        )
     {
         Deposit storage deposit = deposits[depositId];
-        return (deposit.user, deposit.token, deposit.amount, deposit.timestamp);
+        return (
+            deposit.user,
+            deposit.token,
+            deposit.tokenWanted,
+            deposit.amount,
+            deposit.timestamp
+        );
     }
 
     function getFulfillmentOrder(
